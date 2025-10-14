@@ -65,10 +65,11 @@ type AgwCollections struct {
 	RefGrants   *krtcollections.RefGrantIndex
 
 	// kgateway resources
-	Backends          krt.Collection[*v1alpha1.Backend]
-	TrafficPolicies   krt.Collection[*v1alpha1.TrafficPolicy]
-	DirectResponses   krt.Collection[*v1alpha1.DirectResponse]
-	GatewayExtensions krt.Collection[*v1alpha1.GatewayExtension]
+	Backends              krt.Collection[*v1alpha1.Backend]
+	TrafficPolicies       krt.Collection[*v1alpha1.TrafficPolicy]
+	DirectResponses       krt.Collection[*v1alpha1.DirectResponse]
+	GatewayExtensions     krt.Collection[*v1alpha1.GatewayExtension]
+	BackendConfigPolicies krt.Collection[*v1alpha1.BackendConfigPolicy]
 
 	// ControllerName is the name of the Gateway controller.
 	ControllerName string
@@ -107,6 +108,16 @@ func registerKgwResources(kgwClient kgwversioned.Interface) {
 		},
 		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
 			return kgwClient.GatewayV1alpha1().TrafficPolicies(namespace).Watch(context.Background(), o)
+		},
+	)
+	kubeclient.Register[*v1alpha1.BackendConfigPolicy](
+		wellknown.BackendConfigPolicyGVR,
+		wellknown.BackendConfigPolicyGVK,
+		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (runtime.Object, error) {
+			return kgwClient.GatewayV1alpha1().BackendConfigPolicies(namespace).List(context.Background(), o)
+		},
+		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
+			return kgwClient.GatewayV1alpha1().BackendConfigPolicies(namespace).Watch(context.Background(), o)
 		},
 	)
 }
@@ -161,6 +172,16 @@ func registerGatewayAPITypes() {
 		},
 		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
 			return c.GatewayAPI().GatewayV1beta1().ReferenceGrants(namespace).Watch(context.Background(), o)
+		},
+	)
+	kubeclient.Register[*gwv1.BackendTLSPolicy](
+		gvr.BackendTLSPolicy,
+		gvk.BackendTLSPolicy.Kubernetes(),
+		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (runtime.Object, error) {
+			return c.GatewayAPI().GatewayV1().BackendTLSPolicies(namespace).List(context.Background(), o)
+		},
+		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
+			return c.GatewayAPI().GatewayV1().BackendTLSPolicies(namespace).Watch(context.Background(), o)
 		},
 	)
 	kubeclient.Register[*gwv1alpha2.TCPRoute](
@@ -220,6 +241,7 @@ func (c *AgwCollections) HasSynced() bool {
 		c.TLSRoutes != nil && c.TLSRoutes.HasSynced() &&
 		c.ReferenceGrants != nil && c.ReferenceGrants.HasSynced() &&
 		c.BackendTLSPolicies != nil && c.BackendTLSPolicies.HasSynced() &&
+		c.BackendConfigPolicies != nil && c.BackendConfigPolicies.HasSynced() &&
 		c.InferencePools != nil && c.InferencePools.HasSynced() &&
 		c.WrappedPods != nil && c.WrappedPods.HasSynced() &&
 		c.RefGrants != nil && c.RefGrants.HasSynced() &&
@@ -298,10 +320,11 @@ func NewAgwCollections(
 		RefGrants:   commoncol.RefGrants,
 
 		// kgateway resources
-		DirectResponses:   krt.NewInformer[*v1alpha1.DirectResponse](commoncol.Client),
-		TrafficPolicies:   krt.NewInformer[*v1alpha1.TrafficPolicy](commoncol.Client),
-		GatewayExtensions: krt.NewInformer[*v1alpha1.GatewayExtension](commoncol.Client),
-		Backends:          krt.NewInformer[*v1alpha1.Backend](commoncol.Client),
+		DirectResponses:       krt.NewInformer[*v1alpha1.DirectResponse](commoncol.Client),
+		TrafficPolicies:       krt.NewInformer[*v1alpha1.TrafficPolicy](commoncol.Client),
+		GatewayExtensions:     krt.NewInformer[*v1alpha1.GatewayExtension](commoncol.Client),
+		Backends:              krt.NewInformer[*v1alpha1.Backend](commoncol.Client),
+		BackendConfigPolicies: krt.NewInformer[*v1alpha1.BackendConfigPolicy](commoncol.Client),
 	}
 
 	if commoncol.Settings.EnableInferExt {

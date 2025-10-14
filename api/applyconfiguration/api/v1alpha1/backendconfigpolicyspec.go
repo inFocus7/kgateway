@@ -9,18 +9,18 @@ import (
 // BackendConfigPolicySpecApplyConfiguration represents a declarative configuration of the BackendConfigPolicySpec type for use
 // with apply.
 type BackendConfigPolicySpecApplyConfiguration struct {
-	TargetRefs                    []LocalPolicyTargetReferenceApplyConfiguration `json:"targetRefs,omitempty"`
-	TargetSelectors               []LocalPolicyTargetSelectorApplyConfiguration  `json:"targetSelectors,omitempty"`
-	ConnectTimeout                *v1.Duration                                   `json:"connectTimeout,omitempty"`
-	PerConnectionBufferLimitBytes *int32                                         `json:"perConnectionBufferLimitBytes,omitempty"`
-	TCPKeepalive                  *TCPKeepaliveApplyConfiguration                `json:"tcpKeepalive,omitempty"`
-	CommonHttpProtocolOptions     *CommonHttpProtocolOptionsApplyConfiguration   `json:"commonHttpProtocolOptions,omitempty"`
-	Http1ProtocolOptions          *Http1ProtocolOptionsApplyConfiguration        `json:"http1ProtocolOptions,omitempty"`
-	Http2ProtocolOptions          *Http2ProtocolOptionsApplyConfiguration        `json:"http2ProtocolOptions,omitempty"`
-	TLS                           *TLSApplyConfiguration                         `json:"tls,omitempty"`
-	LoadBalancer                  *LoadBalancerApplyConfiguration                `json:"loadBalancer,omitempty"`
-	HealthCheck                   *HealthCheckApplyConfiguration                 `json:"healthCheck,omitempty"`
-	OutlierDetection              *OutlierDetectionApplyConfiguration            `json:"outlierDetection,omitempty"`
+	TargetRefs                    []LocalPolicyTargetReferenceWithSectionNameApplyConfiguration `json:"targetRefs,omitempty"`
+	TargetSelectors               []LocalPolicyTargetSelectorWithSectionNameApplyConfiguration  `json:"targetSelectors,omitempty"`
+	ConnectTimeout                *v1.Duration                                                  `json:"connectTimeout,omitempty"`
+	PerConnectionBufferLimitBytes *int32                                                        `json:"perConnectionBufferLimitBytes,omitempty"`
+	TCPKeepalive                  *TCPKeepaliveApplyConfiguration                               `json:"tcpKeepalive,omitempty"`
+	CommonHttpProtocolOptions     *CommonHttpProtocolOptionsApplyConfiguration                  `json:"commonHttpProtocolOptions,omitempty"`
+	Http1ProtocolOptions          *Http1ProtocolOptionsApplyConfiguration                       `json:"http1ProtocolOptions,omitempty"`
+	Http2ProtocolOptions          *Http2ProtocolOptionsApplyConfiguration                       `json:"http2ProtocolOptions,omitempty"`
+	TLS                           *TLSApplyConfiguration                                        `json:"tls,omitempty"`
+	LoadBalancer                  *LoadBalancerApplyConfiguration                               `json:"loadBalancer,omitempty"`
+	HealthCheck                   *HealthCheckApplyConfiguration                                `json:"healthCheck,omitempty"`
+	OutlierDetection              *OutlierDetectionApplyConfiguration                           `json:"outlierDetection,omitempty"`
 }
 
 // BackendConfigPolicySpecApplyConfiguration constructs a declarative configuration of the BackendConfigPolicySpec type for use with
@@ -32,7 +32,7 @@ func BackendConfigPolicySpec() *BackendConfigPolicySpecApplyConfiguration {
 // WithTargetRefs adds the given value to the TargetRefs field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the TargetRefs field.
-func (b *BackendConfigPolicySpecApplyConfiguration) WithTargetRefs(values ...*LocalPolicyTargetReferenceApplyConfiguration) *BackendConfigPolicySpecApplyConfiguration {
+func (b *BackendConfigPolicySpecApplyConfiguration) WithTargetRefs(values ...*LocalPolicyTargetReferenceWithSectionNameApplyConfiguration) *BackendConfigPolicySpecApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithTargetRefs")
@@ -45,7 +45,7 @@ func (b *BackendConfigPolicySpecApplyConfiguration) WithTargetRefs(values ...*Lo
 // WithTargetSelectors adds the given value to the TargetSelectors field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the TargetSelectors field.
-func (b *BackendConfigPolicySpecApplyConfiguration) WithTargetSelectors(values ...*LocalPolicyTargetSelectorApplyConfiguration) *BackendConfigPolicySpecApplyConfiguration {
+func (b *BackendConfigPolicySpecApplyConfiguration) WithTargetSelectors(values ...*LocalPolicyTargetSelectorWithSectionNameApplyConfiguration) *BackendConfigPolicySpecApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithTargetSelectors")

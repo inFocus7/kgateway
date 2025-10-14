@@ -41,12 +41,12 @@ type BackendConfigPolicySpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	// +kubebuilder:validation:XValidation:rule="self.all(r, (r.group == '' && r.kind == 'Service') || (r.group == 'gateway.kgateway.dev' && r.kind == 'Backend'))",message="TargetRefs must reference either a Kubernetes Service or a Backend API"
-	TargetRefs []LocalPolicyTargetReference `json:"targetRefs,omitempty"`
+	TargetRefs []LocalPolicyTargetReferenceWithSectionName `json:"targetRefs,omitempty"`
 
 	// TargetSelectors specifies the target selectors to select resources to attach the policy to.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self.all(r, (r.group == '' && r.kind == 'Service') || (r.group == 'gateway.kgateway.dev' && r.kind == 'Backend'))",message="TargetSelectors must reference either a Kubernetes Service or a Backend API"
-	TargetSelectors []LocalPolicyTargetSelector `json:"targetSelectors,omitempty"`
+	TargetSelectors []LocalPolicyTargetSelectorWithSectionName `json:"targetSelectors,omitempty"`
 
 	// The timeout for new network connections to hosts in the cluster.
 	// +optional

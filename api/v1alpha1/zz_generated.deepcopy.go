@@ -673,12 +673,14 @@ func (in *BackendConfigPolicySpec) DeepCopyInto(out *BackendConfigPolicySpec) {
 	*out = *in
 	if in.TargetRefs != nil {
 		in, out := &in.TargetRefs, &out.TargetRefs
-		*out = make([]LocalPolicyTargetReference, len(*in))
-		copy(*out, *in)
+		*out = make([]LocalPolicyTargetReferenceWithSectionName, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 	if in.TargetSelectors != nil {
 		in, out := &in.TargetSelectors, &out.TargetSelectors
-		*out = make([]LocalPolicyTargetSelector, len(*in))
+		*out = make([]LocalPolicyTargetSelectorWithSectionName, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

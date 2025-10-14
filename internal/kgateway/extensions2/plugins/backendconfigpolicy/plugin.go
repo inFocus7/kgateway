@@ -145,7 +145,7 @@ func NewPlugin(ctx context.Context, commoncol *collections.CommonCollections, v 
 			},
 			Policy:     b,
 			PolicyIR:   policyIR,
-			TargetRefs: pluginsdkutils.TargetRefsToPolicyRefs(b.Spec.TargetRefs, b.Spec.TargetSelectors),
+			TargetRefs: pluginsdkutils.TargetRefsToPolicyRefsWithSectionName(b.Spec.TargetRefs, b.Spec.TargetSelectors),
 			Errors:     errs,
 		}
 	}, commoncol.KrtOpts.ToOptions("BackendConfigPolicyIRs")...)

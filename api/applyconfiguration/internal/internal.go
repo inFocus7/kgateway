@@ -474,13 +474,13 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         list:
           elementType:
-            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalPolicyTargetReference
+            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalPolicyTargetReferenceWithSectionName
           elementRelationship: atomic
     - name: targetSelectors
       type:
         list:
           elementType:
-            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalPolicyTargetSelector
+            namedType: com.github.kgateway-dev.kgateway.v2.api.v1alpha1.LocalPolicyTargetSelectorWithSectionName
           elementRelationship: atomic
     - name: tcpKeepalive
       type:

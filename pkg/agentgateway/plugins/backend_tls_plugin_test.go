@@ -1535,35 +1535,9 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 			},
 		},
 		{
+			// Tests determinism of TLS policies targeting same backend
 			name: "multiple TLS policies targeting same backend",
 			tlsPolicies: []*gwv1.BackendTLSPolicy{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "tls-policy-1",
-						Namespace: "default",
-					},
-					Spec: gwv1.BackendTLSPolicySpec{
-						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
-							{
-								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
-									Group: gwv1.Group(wellknown.BackendGVK.Group),
-									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
-									Name:  gwv1.ObjectName("test-backend"),
-								},
-							},
-						},
-						Validation: gwv1.BackendTLSPolicyValidation{
-							CACertificateRefs: []gwv1.LocalObjectReference{
-								{
-									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
-									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
-									Name:  "test-ca-cert",
-								},
-							},
-							Hostname: "policy1.example.com",
-						},
-					},
-				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tls-policy-2",
@@ -1591,6 +1565,33 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 						},
 					},
 				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-1",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "policy1.example.com",
+						},
+					},
+				},
 			},
 			backends:      []*v1alpha1.Backend{backend},
 			configMaps:    []*corev1.ConfigMap{configMap},
@@ -1609,11 +1610,84 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 				policy1 := policyMap["default/tls-policy-1:backendtls:default/test-backend"]
 				require.NotNil(t, policy1)
 				require.NotNil(t, policy1.Policy.Spec.GetBackendTls())
-				// The first processed policy takes precedence
+				// The policy with the lowest name takes precedence
 				assert.Equal(t, "policy1.example.com", policy1.Policy.Spec.GetBackendTls().Hostname.GetValue())
 				assert.NotNil(t, policy1.Policy.Spec.GetBackendTls().Root)
 				assert.Nil(t, policy1.Policy.Spec.GetBackendTls().Cert)
 				assert.Nil(t, policy1.Policy.Spec.GetBackendTls().Key)
+			},
+		},
+		{
+			// Tests determinism of config policies targeting same backend
+			name: "multiple config policies targeting same backend",
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("policy2.example.com"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("policy1.example.com"),
+						},
+					},
+				},
+			},
+			backends:      []*v1alpha1.Backend{backend},
+			configMaps:    []*corev1.ConfigMap{configMap},
+			secrets:       []*corev1.Secret{secret},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				require.NoError(t, err)
+				require.Len(t, policies, 1)
+
+				policyMap := make(map[string]*AgwPolicy)
+				for _, policy := range policies {
+					policyMap[policy.Policy.Name] = &policy
+				}
+
+				policy1 := policyMap["default/config-policy-1:backendconfig:default/test-backend"]
+				require.NotNil(t, policy1)
+				require.NotNil(t, policy1.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "policy1.example.com", policy1.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.Nil(t, policy1.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, policy1.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, policy1.Policy.Spec.GetBackendTls().Key)
 			},
 		},
 	}

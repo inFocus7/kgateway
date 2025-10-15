@@ -22,8 +22,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 )
 
-// TODO: Should we disallow/error when more than one backend policy is set for a backend?
-// Agentgateway does an `or` in this case, so it may make sense to disallow here and simplify the logic a bit.
+// TODO: When using first policy, ensure it's sorted by (namespace/name) to be deterministic.
 
 // NewBackendTLSPlugin creates a new BackendTLSPolicy plugin
 // It merges the BackendTLSPolicy and BackendConfigPolicy plugins into a single AgentGateway plugin on a per-target basis.
@@ -156,9 +155,6 @@ func translatePoliciesForBackendTLS(
 			Spec: &api.PolicySpec{Kind: &api.PolicySpec_BackendTls{
 				BackendTls: &api.PolicySpec_BackendTLS{
 					Root: caCert,
-					// Used for mTLS, not part of the spec currently
-					Cert: nil,
-					Key:  nil,
 					// Not currently in the spec.
 					Insecure: nil,
 					// Validation.Hostname is a required value and validated with CEL
@@ -219,6 +215,19 @@ func getBackendTLSCACert(
 }
 
 // translatePoliciesForBackendConfig generates backend ConfigPolicy policies
+/*
+  TODO -- MISSING TRANSLATION:
+  - TargetSelectors
+  - ConnectTimeout
+  - PerConnectionBufferLimitBytes
+  - TCPKeepalive
+  - CommonHttpProtocolOptions
+  - Http1ProtocolOptions
+  - Http2ProtocolOptions
+  - LoadBalancer
+  - HealthCheck
+  - OutlierDetection
+*/
 func translatePoliciesForBackendConfig(
 	krtctx krt.HandlerContext,
 	backends krt.Collection[*v1alpha1.Backend],
@@ -381,24 +390,63 @@ func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev
 	}, nil
 }
 
-// policyGroup holds policies grouped by target for merging
+// While there can technically be multiple config policies for a target, agentgateway only uses a single policy.
+// There is no need to track multiple policies if we're only utilizing one.
+// When multiple policies are present, the policyGroup will only track the policy with the lowest name.
 type policyGroup struct {
-	tlsPolicies    []*api.Policy
-	configPolicies []*api.Policy
+	tlsPolicy    *api.Policy
+	configPolicy *api.Policy
+}
+
+func (pg *policyGroup) setTLSPolicy(policy *api.Policy) {
+	if pg.tlsPolicy == nil || policy.Name < pg.tlsPolicy.Name {
+		pg.tlsPolicy = policy
+	}
+}
+
+func (pg *policyGroup) setConfigPolicy(policy *api.Policy) {
+	if pg.configPolicy == nil || policy.Name < pg.configPolicy.Name {
+		pg.configPolicy = policy
+	}
+}
+
+type policyMap map[string]*policyGroup
+
+func (pm policyMap) addTLSPolicy(policy *api.Policy) {
+	targetKey := getTargetKey(policy)
+	if targetKey == "" {
+		return
+	}
+
+	if pm[targetKey] == nil {
+		pm[targetKey] = &policyGroup{}
+	}
+	pm[targetKey].setTLSPolicy(policy)
+}
+
+func (pm policyMap) addConfigPolicy(policy *api.Policy) {
+	targetKey := getTargetKey(policy)
+	if targetKey == "" {
+		return
+	}
+
+	if pm[targetKey] == nil {
+		pm[targetKey] = &policyGroup{}
+	}
+	pm[targetKey].setConfigPolicy(policy)
 }
 
 // mergeTLSAndConfigPolicies merges TLS and config policies
 // It uses a many-to-many aggregation pattern to merge the policies since a single policy can target multiple targets, and those must be matched with the other policies.
 func mergeTLSAndConfigPolicies(tlsPolicyCol, configPolicyCol krt.Collection[AgwPolicy]) krt.Collection[AgwPolicy] {
-	// using a static collection to support many-to-many aggregation of the different policies
 	mergedCol := krt.NewStaticCollection[AgwPolicy](nil, nil, krt.WithName("MergedTLSPolicies"))
 
 	// recompute and update the merged collection
 	recomputeMerge := func() {
-		policyGroups := groupPoliciesByTarget(tlsPolicyCol.List(), configPolicyCol.List())
+		pm := mapPoliciesByTarget(tlsPolicyCol.List(), configPolicyCol.List())
 
-		mergedPolicies := make([]AgwPolicy, 0, len(policyGroups))
-		for targetKey, group := range policyGroups {
+		mergedPolicies := make([]AgwPolicy, 0, len(pm))
+		for targetKey, group := range pm {
 			if mergedPolicy := createMergedPolicy(targetKey, group); mergedPolicy != nil {
 				mergedPolicies = append(mergedPolicies, AgwPolicy{Policy: mergedPolicy})
 			}
@@ -409,7 +457,9 @@ func mergeTLSAndConfigPolicies(tlsPolicyCol, configPolicyCol krt.Collection[AgwP
 
 	// Register handlers on both source collections to recompute on any change
 	// This makes the collection reactive - any add/update/delete triggers recomputation
-	onUpdate := func([]krt.Event[AgwPolicy]) { recomputeMerge() }
+	onUpdate := func([]krt.Event[AgwPolicy]) {
+		recomputeMerge()
+	}
 	tlsPolicyCol.RegisterBatch(onUpdate, false)
 	configPolicyCol.RegisterBatch(onUpdate, false)
 
@@ -419,57 +469,38 @@ func mergeTLSAndConfigPolicies(tlsPolicyCol, configPolicyCol krt.Collection[AgwP
 	return mergedCol
 }
 
-// groupPoliciesByTarget groups policies from both collections by their target key
-func groupPoliciesByTarget(tlsPolicies, configPolicies []AgwPolicy) map[string]*policyGroup {
-	policyGroups := make(map[string]*policyGroup)
+// mapPoliciesByTarget maps policies from both collections by their target key
+func mapPoliciesByTarget(tlsPolicies, configPolicies []AgwPolicy) map[string]*policyGroup {
+	pm := policyMap{}
 
-	// Helper to add a policy to the appropriate group
-	addPolicy := func(policy *api.Policy, isTLS bool) {
-		targetKey := getTargetKey(policy)
-		if targetKey == "" {
-			return
-		}
-
-		if policyGroups[targetKey] == nil {
-			policyGroups[targetKey] = &policyGroup{}
-		}
-
-		if isTLS {
-			policyGroups[targetKey].tlsPolicies = append(policyGroups[targetKey].tlsPolicies, policy)
-		} else {
-			policyGroups[targetKey].configPolicies = append(policyGroups[targetKey].configPolicies, policy)
-		}
-	}
-
-	// Group TLS policies
 	for _, policy := range tlsPolicies {
-		addPolicy(policy.Policy, true)
+		pm.addTLSPolicy(policy.Policy)
 	}
 
-	// Group config policies
 	for _, policy := range configPolicies {
-		addPolicy(policy.Policy, false)
+		pm.addConfigPolicy(policy.Policy)
 	}
 
-	return policyGroups
+	return pm
 }
 
 // createMergedPolicy creates a merged policy from a policy group, or returns the single policy if only one type exists
 func createMergedPolicy(targetKey string, group *policyGroup) *api.Policy {
-	hasTLS := len(group.tlsPolicies) > 0
-	hasConfig := len(group.configPolicies) > 0
+	hasTLS := group.tlsPolicy != nil
+	hasConfig := group.configPolicy != nil
 
 	// If we have both TLS and config policies, merge them
 	if hasTLS && hasConfig {
 		return mergePolicyGroupByTarget(targetKey, group)
 	}
 
-	// If only one type exists, use the first one
+	// If only one type exists, use a single policy from that type
+	// agentgateway only processes a single policy per backend, so we can safely return a single policy
 	if hasTLS {
-		return group.tlsPolicies[0]
+		return group.tlsPolicy
 	}
 	if hasConfig {
-		return group.configPolicies[0]
+		return group.configPolicy
 	}
 
 	return nil
@@ -495,16 +526,16 @@ func getTargetKey(policy *api.Policy) string {
 
 // mergePolicyGroupByTarget merges policies for the same target
 func mergePolicyGroupByTarget(targetKey string, group *policyGroup) *api.Policy {
-	if len(group.tlsPolicies) == 0 && len(group.configPolicies) == 0 {
+	if group.tlsPolicy == nil && group.configPolicy == nil {
 		return nil
 	}
 
 	// Start with the first available policy as base
 	var basePolicy *api.Policy
-	if len(group.tlsPolicies) > 0 {
-		basePolicy = group.tlsPolicies[0]
-	} else if len(group.configPolicies) > 0 {
-		basePolicy = group.configPolicies[0]
+	if group.tlsPolicy != nil {
+		basePolicy = group.tlsPolicy
+	} else if group.configPolicy != nil {
+		basePolicy = group.configPolicy
 	} else {
 		return nil
 	}
@@ -512,35 +543,33 @@ func mergePolicyGroupByTarget(targetKey string, group *policyGroup) *api.Policy 
 	// Create merged BackendTLS spec
 	mergedTLS := &api.PolicySpec_BackendTLS{}
 
-	// Merge CA certificate from TLS policies (BackendTLSPolicy)
-	for _, tlsPolicy := range group.tlsPolicies {
+	// Merge CA certificate from TLS policy (BackendTLSPolicy)
+	if tlsPolicy := group.tlsPolicy; tlsPolicy != nil {
 		if tlsPolicy.Spec.Kind != nil {
 			if backendTls, ok := tlsPolicy.Spec.Kind.(*api.PolicySpec_BackendTls); ok && backendTls.BackendTls != nil {
-				// Merge CA certificate if present
 				if backendTls.BackendTls.Root != nil {
 					mergedTLS.Root = backendTls.BackendTls.Root
 				}
-				// Merge hostname if present
 				if backendTls.BackendTls.Hostname != nil {
 					mergedTLS.Hostname = backendTls.BackendTls.Hostname
 				}
-				break // Use the first TLS policy's settings
 			}
 		}
 	}
 
 	// Merge client certificates from config policies (BackendConfigPolicy)
-	for _, configPolicy := range group.configPolicies {
+	if configPolicy := group.configPolicy; configPolicy != nil {
 		if configPolicy.Spec.Kind != nil {
+			// Only merge the first config policy's settings
 			if backendTls, ok := configPolicy.Spec.Kind.(*api.PolicySpec_BackendTls); ok && backendTls.BackendTls != nil {
-				// Merge client certificates if present
 				if backendTls.BackendTls.Cert != nil {
 					mergedTLS.Cert = backendTls.BackendTls.Cert
 				}
 				if backendTls.BackendTls.Key != nil {
 					mergedTLS.Key = backendTls.BackendTls.Key
 				}
-				// Merge hostname if not already set
+
+				// Merge hostname if not already set - ideally this would match the TLS policy's hostname
 				if mergedTLS.Hostname == nil && backendTls.BackendTls.Hostname != nil {
 					mergedTLS.Hostname = backendTls.BackendTls.Hostname
 				}

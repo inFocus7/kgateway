@@ -16,8 +16,6 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// TODO: Add one with multiple target refs
-
 func TestTranslatePoliciesForBackendTLS(t *testing.T) {
 	krtctx := krt.TestingDummyContext{}
 
@@ -365,6 +363,67 @@ SWP+58ApfCcURLpMxUmxkO1ayfecNJbmSQ==
 				assert.NoError(t, err)
 			},
 		},
+		{
+			name: "BackendTLSPolicy with multiple target refs",
+			policy: &gwv1.BackendTLSPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "multiple-target-refs-tls-policy",
+					Namespace: "default",
+				},
+				Spec: gwv1.BackendTLSPolicySpec{
+					TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+						{
+							LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+								Group: gwv1.Group(wellknown.BackendGVK.Group),
+								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+								Name:  gwv1.ObjectName("test-backend"),
+							},
+						},
+						{
+							LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+								Group: gwv1.Group(wellknown.BackendGVK.Group),
+								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+								Name:  gwv1.ObjectName("test-backend2"),
+							},
+						},
+					},
+					Validation: gwv1.BackendTLSPolicyValidation{
+						CACertificateRefs: []gwv1.LocalObjectReference{
+							{
+								Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+								Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+								Name:  "test-ca-cert",
+							},
+						},
+						Hostname: "example.com",
+					},
+				},
+			},
+			backends: []*v1alpha1.Backend{backend, {
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backend2",
+					Namespace: "default",
+				},
+				Spec: v1alpha1.BackendSpec{
+					Type: v1alpha1.BackendTypeStatic,
+					Static: &v1alpha1.StaticBackend{
+						Hosts: []v1alpha1.Host{
+							{
+								Host: "example2.com",
+								Port: 443,
+							},
+						},
+					},
+				},
+			}},
+			configMaps:    []*corev1.ConfigMap{configMap, configMap},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				// Should return two policies when multiple target refs, no error returned
+				require.Len(t, policies, 2)
+				assert.NoError(t, err)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -529,6 +588,62 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 				// Should return empty policies when secret not found, no error returned
 				assert.Len(t, policies, 0)
 				assert.NoError(t, err)
+			},
+		},
+		{
+			name: "BackendConfigPolicy with multiple target refs",
+			policy: &v1alpha1.BackendConfigPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "multiple-target-refs-policy",
+					Namespace: "default",
+				},
+				Spec: v1alpha1.BackendConfigPolicySpec{
+					TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+						{
+							LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+								Group: gwv1.Group(wellknown.BackendGVK.Group),
+								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+								Name:  gwv1.ObjectName("test-backend"),
+							},
+						},
+						{
+							LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+								Group: gwv1.Group(wellknown.BackendGVK.Group),
+								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+								Name:  gwv1.ObjectName("test-backend2"),
+							},
+						},
+					},
+					TLS: &v1alpha1.TLS{
+						SecretRef: &corev1.LocalObjectReference{
+							Name: "client-tls-secret",
+						},
+						Sni: ptr.To("example.com"),
+					},
+				},
+			},
+			backends: []*v1alpha1.Backend{backend, {
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backend2",
+					Namespace: "default",
+				},
+				Spec: v1alpha1.BackendSpec{
+					Type: v1alpha1.BackendTypeStatic,
+					Static: &v1alpha1.StaticBackend{
+						Hosts: []v1alpha1.Host{
+							{
+								Host: "example2.com",
+								Port: 443,
+							},
+						},
+					},
+				},
+			}},
+			secrets:       []*corev1.Secret{secret, secret},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				require.NoError(t, err)
+				require.Len(t, policies, 2)
 			},
 		},
 	}

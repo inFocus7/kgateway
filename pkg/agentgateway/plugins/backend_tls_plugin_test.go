@@ -16,6 +16,8 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+// TODO: Add one with multiple target refs
+
 func TestTranslatePoliciesForBackendTLS(t *testing.T) {
 	krtctx := krt.TestingDummyContext{}
 
@@ -624,64 +626,68 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 	}
 
 	tests := []struct {
-		name          string
-		tlsPolicy     *gwv1.BackendTLSPolicy
-		configPolicy  *v1alpha1.BackendConfigPolicy
-		backends      []*v1alpha1.Backend
-		configMaps    []*corev1.ConfigMap
-		secrets       []*corev1.Secret
-		clusterDomain string
-		validate      func(t *testing.T, policies []AgwPolicy, err error)
+		name           string
+		tlsPolicies    []*gwv1.BackendTLSPolicy
+		configPolicies []*v1alpha1.BackendConfigPolicy
+		backends       []*v1alpha1.Backend
+		configMaps     []*corev1.ConfigMap
+		secrets        []*corev1.Secret
+		clusterDomain  string
+		validate       func(t *testing.T, policies []AgwPolicy, err error)
 	}{
 		{
-			name: "merge TLS and Config policies for same backend target",
-			tlsPolicy: &gwv1.BackendTLSPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "tls-policy",
-					Namespace: "default",
-				},
-				Spec: gwv1.BackendTLSPolicySpec{
-					TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
-						{
-							LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
-								Group: gwv1.Group(wellknown.BackendGVK.Group),
-								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
-								Name:  gwv1.ObjectName("test-backend"),
-							},
-						},
+			name: "merge TLS and Config policies for same backend target - single backend",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy",
+						Namespace: "default",
 					},
-					Validation: gwv1.BackendTLSPolicyValidation{
-						CACertificateRefs: []gwv1.LocalObjectReference{
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
 							{
-								Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
-								Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
-								Name:  "test-ca-cert",
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
 							},
 						},
-						Hostname: "example.com",
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "example.com",
+						},
 					},
 				},
 			},
-			configPolicy: &v1alpha1.BackendConfigPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "config-policy",
-					Namespace: "default",
-				},
-				Spec: v1alpha1.BackendConfigPolicySpec{
-					TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
-						{
-							LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
-								Group: gwv1.Group(wellknown.BackendGVK.Group),
-								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
-								Name:  gwv1.ObjectName("test-backend"),
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
 							},
 						},
-					},
-					TLS: &v1alpha1.TLS{
-						SecretRef: &corev1.LocalObjectReference{
-							Name: "client-tls-secret",
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("example.com"),
 						},
-						Sni: ptr.To("example.com"),
 					},
 				},
 			},
@@ -711,39 +717,41 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 			},
 		},
 		{
-			name: "only TLS policy",
-			tlsPolicy: &gwv1.BackendTLSPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "tls-only-policy",
-					Namespace: "default",
-				},
-				Spec: gwv1.BackendTLSPolicySpec{
-					TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
-						{
-							LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
-								Group: gwv1.Group(wellknown.BackendGVK.Group),
-								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
-								Name:  gwv1.ObjectName("test-backend"),
-							},
-						},
+			name: "only TLS policy - single backend",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-only-policy",
+						Namespace: "default",
 					},
-					Validation: gwv1.BackendTLSPolicyValidation{
-						CACertificateRefs: []gwv1.LocalObjectReference{
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
 							{
-								Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
-								Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
-								Name:  "test-ca-cert",
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
 							},
 						},
-						Hostname: "example.com",
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "example.com",
+						},
 					},
 				},
 			},
-			configPolicy:  nil,
-			backends:      []*v1alpha1.Backend{backend},
-			configMaps:    []*corev1.ConfigMap{configMap},
-			secrets:       []*corev1.Secret{secret},
-			clusterDomain: "cluster.local",
+			configPolicies: nil,
+			backends:       []*v1alpha1.Backend{backend},
+			configMaps:     []*corev1.ConfigMap{configMap},
+			secrets:        []*corev1.Secret{secret},
+			clusterDomain:  "cluster.local",
 			validate: func(t *testing.T, policies []AgwPolicy, err error) {
 				require.NoError(t, err)
 				require.Len(t, policies, 1)
@@ -761,28 +769,30 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 			},
 		},
 		{
-			name:      "only Config policy",
-			tlsPolicy: nil,
-			configPolicy: &v1alpha1.BackendConfigPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "config-only-policy",
-					Namespace: "default",
-				},
-				Spec: v1alpha1.BackendConfigPolicySpec{
-					TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
-						{
-							LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
-								Group: gwv1.Group(wellknown.BackendGVK.Group),
-								Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
-								Name:  gwv1.ObjectName("test-backend"),
+			name:        "only Config policy - single backend",
+			tlsPolicies: nil,
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-only-policy",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
 							},
 						},
-					},
-					TLS: &v1alpha1.TLS{
-						SecretRef: &corev1.LocalObjectReference{
-							Name: "client-tls-secret",
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("example.com"),
 						},
-						Sni: ptr.To("example.com"),
 					},
 				},
 			},
@@ -807,16 +817,687 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 			},
 		},
 		{
-			name:          "no policies",
-			tlsPolicy:     nil,
-			configPolicy:  nil,
+			name:           "no policies",
+			tlsPolicies:    nil,
+			configPolicies: nil,
+			backends:       []*v1alpha1.Backend{backend},
+			configMaps:     []*corev1.ConfigMap{configMap},
+			secrets:        []*corev1.Secret{secret},
+			clusterDomain:  "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				assert.Len(t, policies, 0)
+				assert.NoError(t, err)
+			},
+		},
+		{
+			name: "TLS policy and config policy targeting different backends",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-backend1",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "backend1.example.com",
+						},
+					},
+				},
+			},
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend2"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("backend2.example.com"),
+						},
+					},
+				},
+			},
+			backends: []*v1alpha1.Backend{
+				backend, // test-backend
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend1.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend2.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+			},
+			configMaps:    []*corev1.ConfigMap{configMap},
+			secrets:       []*corev1.Secret{secret},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				require.NoError(t, err)
+				// Should have separate policies for each backend
+				require.Len(t, policies, 2)
+
+				policyMap := make(map[string]*AgwPolicy)
+				for _, policy := range policies {
+					policyMap[policy.Policy.Name] = &policy
+				}
+
+				tlsPolicyBackend1 := policyMap["default/tls-policy-backend1:backendtls:default/backend1"]
+				require.NotNil(t, tlsPolicyBackend1)
+				require.NotNil(t, tlsPolicyBackend1.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend1.example.com", tlsPolicyBackend1.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, tlsPolicyBackend1.Policy.Spec.GetBackendTls().Root)
+				assert.Nil(t, tlsPolicyBackend1.Policy.Spec.GetBackendTls().Cert)
+				assert.Nil(t, tlsPolicyBackend1.Policy.Spec.GetBackendTls().Key)
+
+				configPolicyBackend2 := policyMap["default/config-policy-backend2:backendconfig:default/backend2"]
+				require.NotNil(t, configPolicyBackend2)
+				require.NotNil(t, configPolicyBackend2.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend2.example.com", configPolicyBackend2.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.Nil(t, configPolicyBackend2.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, configPolicyBackend2.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, configPolicyBackend2.Policy.Spec.GetBackendTls().Key)
+			},
+		},
+		{
+			name: "two TLS policies and two config policies targeting two backends",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-backend1",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "backend1.example.com",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-backend2",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend2"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "backend2.example.com",
+						},
+					},
+				},
+			},
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-backend1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("backend1.example.com"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend2"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("backend2.example.com"),
+						},
+					},
+				},
+			},
+			backends: []*v1alpha1.Backend{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend1.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend2.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+			},
+			configMaps:    []*corev1.ConfigMap{configMap},
+			secrets:       []*corev1.Secret{secret},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				require.NoError(t, err)
+				require.Len(t, policies, 2)
+
+				// Should have merged policies for each backend
+				policyMap := make(map[string]*AgwPolicy)
+				for _, policy := range policies {
+					policyMap[policy.Policy.Name] = &policy
+				}
+
+				backend1Policy := policyMap["merged-tls-policy:backend:default/backend1"]
+				require.NotNil(t, backend1Policy)
+				require.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend1.example.com", backend1Policy.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Key)
+
+				backend2Policy := policyMap["merged-tls-policy:backend:default/backend2"]
+				require.NotNil(t, backend2Policy)
+				require.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend2.example.com", backend2Policy.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls().Key)
+			},
+		},
+		{
+			name: "two TLS policies and one config policy targeting two backends (one without match)",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-backend1",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "backend1.example.com",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-backend2",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend2"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "backend2.example.com",
+						},
+					},
+				},
+			},
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-backend1-only",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("backend1.example.com"),
+						},
+					},
+				},
+			},
+			backends: []*v1alpha1.Backend{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend1.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend2.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+			},
+			configMaps:    []*corev1.ConfigMap{configMap},
+			secrets:       []*corev1.Secret{secret},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				require.NoError(t, err)
+				require.Len(t, policies, 2)
+
+				// Should have one merged policy for backend1 and one TLS-only policy for backend2
+				policyMap := make(map[string]*AgwPolicy)
+				for _, policy := range policies {
+					policyMap[policy.Policy.Name] = &policy
+				}
+
+				backend1Policy := policyMap["merged-tls-policy:backend:default/backend1"]
+				require.NotNil(t, backend1Policy)
+				require.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend1.example.com", backend1Policy.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Key)
+
+				backend2Policy := policyMap["default/tls-policy-backend2:backendtls:default/backend2"]
+				require.NotNil(t, backend2Policy)
+				require.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend2.example.com", backend2Policy.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls().Root)
+				assert.Nil(t, backend2Policy.Policy.Spec.GetBackendTls().Cert)
+				assert.Nil(t, backend2Policy.Policy.Spec.GetBackendTls().Key)
+			},
+		},
+		{
+			name: "one TLS policy and two config policies targeting two backends (one without match)",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-backend1",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "backend1.example.com",
+						},
+					},
+				},
+			},
+			configPolicies: []*v1alpha1.BackendConfigPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-backend1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend1"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("backend1.example.com"),
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "config-policy-backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendConfigPolicySpec{
+						TargetRefs: []v1alpha1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: v1alpha1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("backend2"),
+								},
+							},
+						},
+						TLS: &v1alpha1.TLS{
+							SecretRef: &corev1.LocalObjectReference{
+								Name: "client-tls-secret",
+							},
+							Sni: ptr.To("backend2.example.com"),
+						},
+					},
+				},
+			},
+			backends: []*v1alpha1.Backend{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend1",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend1.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backend2",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.BackendSpec{
+						Type: v1alpha1.BackendTypeStatic,
+						Static: &v1alpha1.StaticBackend{
+							Hosts: []v1alpha1.Host{
+								{
+									Host: "backend2.example.com",
+									Port: 443,
+								},
+							},
+						},
+					},
+				},
+			},
+			configMaps:    []*corev1.ConfigMap{configMap},
+			secrets:       []*corev1.Secret{secret},
+			clusterDomain: "cluster.local",
+			validate: func(t *testing.T, policies []AgwPolicy, err error) {
+				require.NoError(t, err)
+				require.Len(t, policies, 2)
+
+				// Should have one merged policy for backend1 and one config-only policy for backend2
+				policyMap := make(map[string]*AgwPolicy)
+				for _, policy := range policies {
+					policyMap[policy.Policy.Name] = &policy
+				}
+
+				backend1Policy := policyMap["merged-tls-policy:backend:default/backend1"]
+				require.NotNil(t, backend1Policy)
+				require.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend1.example.com", backend1Policy.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, backend1Policy.Policy.Spec.GetBackendTls().Key)
+
+				backend2Policy := policyMap["default/config-policy-backend2:backendconfig:default/backend2"]
+				require.NotNil(t, backend2Policy)
+				require.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls())
+				assert.Equal(t, "backend2.example.com", backend2Policy.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.Nil(t, backend2Policy.Policy.Spec.GetBackendTls().Root)
+				assert.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls().Cert)
+				assert.NotNil(t, backend2Policy.Policy.Spec.GetBackendTls().Key)
+			},
+		},
+		{
+			name: "multiple TLS policies targeting same backend",
+			tlsPolicies: []*gwv1.BackendTLSPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-1",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "policy1.example.com",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tls-policy-2",
+						Namespace: "default",
+					},
+					Spec: gwv1.BackendTLSPolicySpec{
+						TargetRefs: []gwv1.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwv1.LocalPolicyTargetReference{
+									Group: gwv1.Group(wellknown.BackendGVK.Group),
+									Kind:  gwv1.Kind(wellknown.BackendGVK.Kind),
+									Name:  gwv1.ObjectName("test-backend"),
+								},
+							},
+						},
+						Validation: gwv1.BackendTLSPolicyValidation{
+							CACertificateRefs: []gwv1.LocalObjectReference{
+								{
+									Group: gwv1.Group(wellknown.ConfigMapGVK.Group),
+									Kind:  gwv1.Kind(wellknown.ConfigMapGVK.Kind),
+									Name:  "test-ca-cert",
+								},
+							},
+							Hostname: "policy2.example.com", // Different hostname
+						},
+					},
+				},
+			},
 			backends:      []*v1alpha1.Backend{backend},
 			configMaps:    []*corev1.ConfigMap{configMap},
 			secrets:       []*corev1.Secret{secret},
 			clusterDomain: "cluster.local",
 			validate: func(t *testing.T, policies []AgwPolicy, err error) {
-				assert.Len(t, policies, 0)
-				assert.NoError(t, err)
+				require.NoError(t, err)
+				// A single policy should be produced
+				require.Len(t, policies, 1)
+
+				policyMap := make(map[string]*AgwPolicy)
+				for _, policy := range policies {
+					policyMap[policy.Policy.Name] = &policy
+				}
+
+				policy1 := policyMap["default/tls-policy-1:backendtls:default/test-backend"]
+				require.NotNil(t, policy1)
+				require.NotNil(t, policy1.Policy.Spec.GetBackendTls())
+				// The first processed policy takes precedence
+				assert.Equal(t, "policy1.example.com", policy1.Policy.Spec.GetBackendTls().Hostname.GetValue())
+				assert.NotNil(t, policy1.Policy.Spec.GetBackendTls().Root)
+				assert.Nil(t, policy1.Policy.Spec.GetBackendTls().Cert)
+				assert.Nil(t, policy1.Policy.Spec.GetBackendTls().Key)
 			},
 		},
 	}
@@ -828,25 +1509,24 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 			configMapsCol := krt.NewStaticCollection(nil, tt.configMaps)
 			secretsCol := krt.NewStaticCollection(nil, tt.secrets)
 
-			// Create TLS policy collection if provided
+			// Create TLS policy collection to pass to mergeTLSAndConfigPolicies
 			var tlsPolicies []AgwPolicy
-			if tt.tlsPolicy != nil {
-				tlsPolicyResults := translatePoliciesForBackendTLS(krtctx, configMapsCol, backendsCol, tt.tlsPolicy, tt.clusterDomain)
-				tlsPolicies = tlsPolicyResults
+			for _, tlsPolicy := range tt.tlsPolicies {
+				tlsPolicyResults := translatePoliciesForBackendTLS(krtctx, configMapsCol, backendsCol, tlsPolicy, tt.clusterDomain)
+				tlsPolicies = append(tlsPolicies, tlsPolicyResults...)
 			}
 			tlsPolicyCol := krt.NewStaticCollection(nil, tlsPolicies)
 
-			// Create config policy collection if provided
+			// Create config policy collection to pass to mergeTLSAndConfigPolicies
 			var configPolicies []AgwPolicy
-			if tt.configPolicy != nil {
-				configPolicyResults := translatePoliciesForBackendConfig(krtctx, backendsCol, secretsCol, tt.configPolicy, tt.clusterDomain)
-				configPolicies = configPolicyResults
+			for _, configPolicy := range tt.configPolicies {
+				configPolicyResults := translatePoliciesForBackendConfig(krtctx, backendsCol, secretsCol, configPolicy, tt.clusterDomain)
+				configPolicies = append(configPolicies, configPolicyResults...)
 			}
 			configPolicyCol := krt.NewStaticCollection(nil, configPolicies)
 
-			// Test merging
+			// Test policy merging
 			mergedPolicies := mergeTLSAndConfigPolicies(tlsPolicyCol, configPolicyCol)
-
 			if tt.validate != nil {
 				tt.validate(t, mergedPolicies.List(), nil)
 			}

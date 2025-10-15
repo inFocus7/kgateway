@@ -280,9 +280,6 @@ func translatePoliciesForBackendConfig(
 					continue
 				}
 			} else {
-				// The target defaults to <backend-namespace>/<backend-name>.
-				// If SectionName is specified to select a specific target in the Backend,
-				// the target becomes <backend-namespace>/<backend-name>/<section-name>
 				policyTarget = &api.PolicyTarget{
 					Kind: &api.PolicyTarget_Backend{
 						Backend: utils.InternalBackendName(bcfg.Namespace, string(target.Name), string(ptr.OrEmpty(target.SectionName))),
@@ -291,7 +288,6 @@ func translatePoliciesForBackendConfig(
 			}
 		case wellknown.ServiceKind:
 			hostname := fmt.Sprintf("%s.%s.svc.%s", target.Name, bcfg.Namespace, clusterDomain)
-			// If SectionName is specified to select the port, use service/<namespace>/<hostname>:<port>
 			if port := ptr.OrEmpty(target.SectionName); port != "" {
 				policyTarget = &api.PolicyTarget{
 					Kind: &api.PolicyTarget_Backend{
@@ -299,7 +295,6 @@ func translatePoliciesForBackendConfig(
 					},
 				}
 			} else {
-				// Select the entire service with <namespace>/<hostname>
 				policyTarget = &api.PolicyTarget{
 					Kind: &api.PolicyTarget_Service{
 						Service: fmt.Sprintf("%s/%s", bcfg.Namespace, hostname),
@@ -334,7 +329,10 @@ func translatePoliciesForBackendConfig(
 func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy) (*api.PolicySpec_BackendTLS, error) {
 	var cert, key *wrapperspb.BytesValue
 
+	var hostname *wrapperspb.StringValue = nil
 	if bcfg.Spec.TLS != nil {
+		hostname = wrapperspb.String(string(ptr.OrEmpty(bcfg.Spec.TLS.Sni)))
+
 		// Handle client certificates and keys
 		if bcfg.Spec.TLS.SecretRef != nil {
 			secret := krt.FetchOne(krtctx, secrets, krt.FilterObjectName(types.NamespacedName{
@@ -354,10 +352,10 @@ func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev
 			}
 		}
 
-		// Handle TLS files (for file-based TLS configuration)
+		// Handle TLS files
+		// TODO: need to verify this works, test failed when i added some.
 		if bcfg.Spec.TLS.Files != nil {
 			// For file-based TLS, we need to read the files from the filesystem
-			// This assumes the files are mounted/available in the proxy's filesystem
 			if bcfg.Spec.TLS.Files.TLSCertificate != nil && *bcfg.Spec.TLS.Files.TLSCertificate != "" {
 				certData, err := os.ReadFile(*bcfg.Spec.TLS.Files.TLSCertificate)
 				if err != nil {
@@ -379,7 +377,7 @@ func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev
 	return &api.PolicySpec_BackendTLS{
 		Cert:     cert,
 		Key:      key,
-		Hostname: wrapperspb.String(string(ptr.OrEmpty(bcfg.Spec.TLS.Sni))),
+		Hostname: hostname,
 	}, nil
 }
 
@@ -552,9 +550,6 @@ func mergePolicyGroupByTarget(targetKey string, group *policyGroup) *api.Policy 
 
 	// Create final merged policy with a predictable name
 	policyName := fmt.Sprintf("merged-tls-policy:%s", targetKey)
-	if mergedTLS.Hostname != nil {
-		policyName += fmt.Sprintf(":%s", mergedTLS.Hostname.Value)
-	}
 
 	return &api.Policy{
 		Name:   policyName,

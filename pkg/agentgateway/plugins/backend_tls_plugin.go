@@ -215,19 +215,6 @@ func getBackendTLSCACert(
 }
 
 // translatePoliciesForBackendConfig generates backend ConfigPolicy policies
-/*
-  TODO -- MISSING TRANSLATION:
-  - TargetSelectors
-  - ConnectTimeout
-  - PerConnectionBufferLimitBytes
-  - TCPKeepalive
-  - CommonHttpProtocolOptions
-  - Http1ProtocolOptions
-  - Http2ProtocolOptions
-  - LoadBalancer
-  - HealthCheck
-  - OutlierDetection
-*/
 func translatePoliciesForBackendConfig(
 	krtctx krt.HandlerContext,
 	backends krt.Collection[*v1alpha1.Backend],
@@ -362,7 +349,6 @@ func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev
 		}
 
 		// Handle TLS files
-		// TODO: need to verify this works, test failed when i added some.
 		if bcfg.Spec.TLS.Files != nil {
 			// For file-based TLS, we need to read the files from the filesystem
 			if bcfg.Spec.TLS.Files.TLSCertificate != nil && *bcfg.Spec.TLS.Files.TLSCertificate != "" {

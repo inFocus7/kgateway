@@ -61,6 +61,7 @@ func Plugins(agw *AgwCollections) []AgwPlugin {
 		NewInferencePlugin(agw),
 		NewA2APlugin(agw),
 		NewBackendTLSPlugin(agw),
+		NewBackendConfigPlugin(agw),
 	}
 }
 

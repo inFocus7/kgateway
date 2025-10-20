@@ -662,7 +662,7 @@ spec:
                   the policy to.
                 items:
                   description: |-
-                    Select the object to attach the policy by Group, Kind, and Name.
+                    Select the object to attach the policy by Group, Kind, Name and SectionName.
                     The object must be in the same namespace as the policy.
                     You can target only one object at a time.
                   properties:
@@ -687,6 +687,7 @@ spec:
                       minLength: 1
                       type: string
                     sectionName:
+                      description: The section name of the target resource.
                       maxLength: 253
                       minLength: 1
                       pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
@@ -709,7 +710,7 @@ spec:
                   resources to attach the policy to.
                 items:
                   description: |-
-                    LocalPolicyTargetSelector selects the object to attach the policy by Group, Kind, and MatchLabels.
+                    LocalPolicyTargetSelectorWithSectionName the object to attach the policy by Group, Kind, MatchLabels, and optionally SectionName.
                     The object must be in the same namespace as the policy and match the
                     specified labels.
                     Do not use targetSelectors when reconciliation times are critical, especially if you
@@ -737,6 +738,7 @@ spec:
                       description: Label selector to select the target resource.
                       type: object
                     sectionName:
+                      description: The section name of the target resource.
                       maxLength: 253
                       minLength: 1
                       pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$

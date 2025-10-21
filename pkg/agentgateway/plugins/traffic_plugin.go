@@ -13,7 +13,6 @@ import (
 	"github.com/google/cel-go/cel"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/kclient"
 	"istio.io/istio/pkg/kube/krt"
 	corev1 "k8s.io/api/core/v1"
@@ -59,18 +58,6 @@ func init() {
 	}
 }
 
-// convertStatusCollection converts the specific TrafficPolicy status collection
-// to the generic controllers.Object status collection expected by the interface
-func convertStatusCollection(col krt.Collection[krt.ObjectWithStatus[*v1alpha1.TrafficPolicy, gwv1.PolicyStatus]]) krt.StatusCollection[controllers.Object, gwv1.PolicyStatus] {
-	// Use krt.NewCollection to transform the collection
-	return krt.NewCollection(col, func(ctx krt.HandlerContext, item krt.ObjectWithStatus[*v1alpha1.TrafficPolicy, gwv1.PolicyStatus]) *krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus] {
-		return &krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus]{
-			Obj:    controllers.Object(item.Obj),
-			Status: item.Status,
-		}
-	})
-}
-
 // NewTrafficPlugin creates a new TrafficPolicy plugin
 func NewTrafficPlugin(agw *AgwCollections) AgwPlugin {
 	col := krt.WrapClient(kclient.NewFiltered[*v1alpha1.TrafficPolicy](
@@ -88,7 +75,7 @@ func NewTrafficPlugin(agw *AgwCollections) AgwPlugin {
 		ContributesPolicies: map[schema.GroupKind]PolicyPlugin{
 			wellknown.TrafficPolicyGVK.GroupKind(): {
 				Policies:       policyCol,
-				PolicyStatuses: convertStatusCollection(policyStatusCol),
+				PolicyStatuses: utils.ConvertStatusCollection(policyStatusCol),
 			},
 		},
 		ExtraHasSynced: func() bool {
@@ -166,7 +153,7 @@ func TranslateTrafficPolicy(
 			parentRef.Kind = &kind
 
 			// Look up the Backend referenced by the policy
-			backendKey := getBackendKey(trafficPolicy.Namespace, string(target.Name))
+			backendKey := utils.GetBackendKey(trafficPolicy.Namespace, string(target.Name))
 			backend := krt.FetchOne(ctx, backends, krt.FilterKey(backendKey))
 			if backend == nil {
 				logger.Error("backend not found",
@@ -784,10 +771,6 @@ func processRBACPolicy(
 
 func getTrafficPolicyName(trafficPolicyNs, trafficPolicyName, policyTargetName string) string {
 	return fmt.Sprintf("trafficpolicy/%s/%s/%s", trafficPolicyNs, trafficPolicyName, policyTargetName)
-}
-
-func getBackendKey(targetPolicyNs, targetName string) string {
-	return fmt.Sprintf("%s/%s", targetPolicyNs, targetName)
 }
 
 func getGatewayExtensionKey(extensionNamespace, extensionName string) string {

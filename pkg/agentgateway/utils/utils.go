@@ -1,6 +1,12 @@
 package utils
 
-import "fmt"
+import (
+	"fmt"
+
+	"istio.io/istio/pkg/kube/controllers"
+	"istio.io/istio/pkg/kube/krt"
+	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
+)
 
 // SingularLLMProviderSubBackendName is the name of the sub-backend for singular LLM providers.
 // If the Backend is ns/foo, the sub-backend will be ns/foo/backend
@@ -42,4 +48,22 @@ func InternalBackendName(backendNamespace, backendName, targetName string) strin
 		name += "/" + targetName
 	}
 	return name
+}
+
+// ConvertStatusCollection converts the specific status collection
+// to the generic controllers.Object status collection expected by the KRT interface.
+func ConvertStatusCollection[T controllers.Object](col krt.Collection[krt.ObjectWithStatus[T, gwv1.PolicyStatus]]) krt.StatusCollection[controllers.Object, gwv1.PolicyStatus] {
+	// Use krt.NewCollection to transform the collection
+	return krt.NewCollection(col, func(ctx krt.HandlerContext, item krt.ObjectWithStatus[T, gwv1.PolicyStatus]) *krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus] {
+		return &krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus]{
+			Obj:    controllers.Object(item.Obj),
+			Status: item.Status,
+		}
+	})
+}
+
+// GetBackendKey returns the key for the backend corresponding to the
+// specified target policy namespace and name.
+func GetBackendKey(targetPolicyNs, targetName string) string {
+	return fmt.Sprintf("%s/%s", targetPolicyNs, targetName)
 }

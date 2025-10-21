@@ -108,6 +108,7 @@ func NewAgwStatusSyncer(
 
 	// Register the built-in TrafficPolicy handler
 	syncer.RegisterPolicyStatusHandler(wellknown.TrafficPolicyGVK.String(), syncer.syncTrafficPolicyStatusHandler)
+	syncer.RegisterPolicyStatusHandler(wellknown.BackendConfigPolicyGVK.String(), syncer.syncBackendConfigPolicyStatusHandler)
 
 	// Register any additional handlers provided
 	for gvk, handler := range additionalPolicyStatusHandlers {
@@ -235,6 +236,34 @@ func (s *AgentGwStatusSyncer) syncTrafficPolicyStatusHandler(ctx context.Context
 	}
 
 	return client.Status().Update(ctx, &trafficpolicy)
+}
+
+// syncBackendConfigPolicyStatusHandler handles status syncing for BackendConfigPolicy resources
+func (s *AgentGwStatusSyncer) syncBackendConfigPolicyStatusHandler(ctx context.Context, client client.Client, namespacedName types.NamespacedName, status gwv1.PolicyStatus) error {
+	backendConfigPolicy := v1alpha1.BackendConfigPolicy{}
+	err := client.Get(ctx, namespacedName, &backendConfigPolicy)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Debug("skipping status sync for backendconfigpolicy, resource not found", "namespaced_name", namespacedName.String())
+			return nil
+		}
+		return err
+	}
+
+	// Update the backendconfigpolicy status directly
+	var ancestors []gwv1.PolicyAncestorStatus
+	for _, ancestor := range status.Ancestors {
+		ancestors = append(ancestors, gwv1.PolicyAncestorStatus{
+			AncestorRef:    ancestor.AncestorRef,
+			ControllerName: gwv1.GatewayController(ancestor.ControllerName),
+			Conditions:     ancestor.Conditions,
+		})
+	}
+	backendConfigPolicy.Status = gwv1.PolicyStatus{
+		Ancestors: ancestors,
+	}
+
+	return client.Status().Update(ctx, &backendConfigPolicy)
 }
 
 // syncPolicyStatus handles status syncing for all policy types with a registered policy status handler

@@ -4,30 +4,76 @@ import (
 	"fmt"
 	"os"
 
+	"slices"
+	"strings"
+
 	"github.com/agentgateway/agentgateway/go/api"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 	"istio.io/istio/pkg/kube/krt"
 	"istio.io/istio/pkg/ptr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	k8sptr "k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
+	"sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"github.com/kgateway-dev/kgateway/v2/internal/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/agentgateway/utils"
+	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
+	"github.com/kgateway-dev/kgateway/v2/pkg/reports"
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 )
+
+// mapping of unsupported backendconfigpolicy fields to check if any are in use
+var unsupportedBackendConfigPolicyFields = map[string]func(*v1alpha1.BackendConfigPolicy) bool{
+	"TargetSelectors":               func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.TargetSelectors != nil },
+	"ConnectTimeout":                func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.ConnectTimeout != nil },
+	"PerConnectionBufferLimitBytes": func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.PerConnectionBufferLimitBytes != nil },
+	"TCPKeepalive":                  func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.TCPKeepalive != nil },
+	"CommonHttpProtocolOptions":     func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.CommonHttpProtocolOptions != nil },
+	"Http1ProtocolOptions":          func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.Http1ProtocolOptions != nil },
+	"Http2ProtocolOptions":          func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.Http2ProtocolOptions != nil },
+	"LoadBalancer":                  func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.LoadBalancer != nil },
+	"HealthCheck":                   func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.HealthCheck != nil },
+	"OutlierDetection":              func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.OutlierDetection != nil },
+	"TLS.WellKnownCACertificates": func(b *v1alpha1.BackendConfigPolicy) bool {
+		return b.Spec.TLS != nil && b.Spec.TLS.WellKnownCACertificates != nil
+	},
+	"TLS.InsecureSkipVerify": func(b *v1alpha1.BackendConfigPolicy) bool {
+		return b.Spec.TLS != nil && b.Spec.TLS.InsecureSkipVerify != nil
+	},
+	"TLS.VerifySubjectAltNames": func(b *v1alpha1.BackendConfigPolicy) bool {
+		return b.Spec.TLS != nil && b.Spec.TLS.VerifySubjectAltNames != nil
+	},
+	"TLS.Parameters": func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.TLS != nil && b.Spec.TLS.Parameters != nil },
+	"TLS.AlpnProtocols": func(b *v1alpha1.BackendConfigPolicy) bool {
+		return b.Spec.TLS != nil && b.Spec.TLS.AlpnProtocols != nil
+	},
+	"TLS.AllowRenegotiation": func(b *v1alpha1.BackendConfigPolicy) bool {
+		return b.Spec.TLS != nil && b.Spec.TLS.AllowRenegotiation != nil
+	},
+	"TLS.SimpleTLS": func(b *v1alpha1.BackendConfigPolicy) bool { return b.Spec.TLS != nil && b.Spec.TLS.SimpleTLS != nil },
+}
 
 // NewBackendConfigPlugin creates a new BackendConfigPolicy plugin
 func NewBackendConfigPlugin(agw *AgwCollections) AgwPlugin {
 	clusterDomain := kubeutils.GetClusterDomainName()
-	policyCol := krt.NewManyCollection(agw.BackendConfigPolicies, func(krtctx krt.HandlerContext, bcfg *v1alpha1.BackendConfigPolicy) []AgwPolicy {
-		return translatePoliciesForBackendConfig(krtctx, agw.Backends, agw.Secrets, bcfg, clusterDomain)
+	policyStatusCol, policyCol := krt.NewStatusManyCollection(agw.BackendConfigPolicies, func(krtctx krt.HandlerContext, bcfg *v1alpha1.BackendConfigPolicy) (
+		*gwv1.PolicyStatus,
+		[]AgwPolicy,
+	) {
+		return translatePoliciesForBackendConfig(krtctx, agw.Backends, agw.Secrets, bcfg, clusterDomain, agw.ControllerName)
 	})
 	return AgwPlugin{
 		ContributesPolicies: map[schema.GroupKind]PolicyPlugin{
 			wellknown.BackendConfigPolicyGVK.GroupKind(): {
-				Policies: policyCol,
+				Policies:       policyCol,
+				PolicyStatuses: utils.ConvertStatusCollection(policyStatusCol),
 			},
 		},
 		ExtraHasSynced: func() bool {
@@ -42,23 +88,62 @@ func translatePoliciesForBackendConfig(
 	backends krt.Collection[*v1alpha1.Backend],
 	secrets krt.Collection[*corev1.Secret],
 	bcfg *v1alpha1.BackendConfigPolicy,
-	clusterDomain string,
-) []AgwPolicy {
+	clusterDomain, controllerName string,
+) (*gwv1.PolicyStatus, []AgwPolicy) {
 	logger := logger.With("plugin_kind", "backendconfig")
 	var policies []AgwPolicy
+	var ancestors []gwv1.PolicyAncestorStatus
 
 	for _, target := range bcfg.Spec.TargetRefs {
 		var policyTarget *api.PolicyTarget
+		// Build a base ParentRef for status reporting
+		parentRef := gwv1.ParentReference{
+			Name:      gwv1.ObjectName(target.Name),
+			Namespace: k8sptr.To(gwv1.Namespace(bcfg.Namespace)),
+		}
+		if target.SectionName != nil {
+			parentRef.SectionName = (*gwv1.SectionName)(target.SectionName)
+		}
 
 		switch string(target.Kind) {
 		case wellknown.BackendGVK.Kind:
-			backendRef := types.NamespacedName{
-				Name:      string(target.Name),
-				Namespace: bcfg.Namespace,
-			}
-			backend := krt.FetchOne(krtctx, backends, krt.FilterObjectName(backendRef))
-			if backend == nil || *backend == nil {
-				logger.Error("backend not found; skipping policy", "backend", backendRef, "policy", kubeutils.NamespacedNameFrom(bcfg))
+			// kgateway backend kind (MCP, AI, etc.)
+			group := gwv1.Group(wellknown.BackendGVK.Group)
+			kind := gwv1.Kind(wellknown.BackendGVK.Kind)
+			parentRef.Group = &group
+			parentRef.Kind = &kind
+
+			backendKey := utils.GetBackendKey(bcfg.Namespace, string(target.Name))
+			backend := krt.FetchOne(krtctx, backends, krt.FilterKey(backendKey))
+			if backend == nil {
+				logger.Error("backend not found",
+					"target", target.Name,
+					"policy", client.ObjectKeyFromObject(bcfg))
+
+				conds := []metav1.Condition{}
+				meta.SetStatusCondition(&conds, metav1.Condition{
+					Type:    string(v1alpha1.PolicyConditionAccepted),
+					Status:  metav1.ConditionFalse,
+					Reason:  string(v1alpha1.PolicyReasonInvalid),
+					Message: fmt.Sprintf("Backend %s not found", target.Name),
+				})
+				// status := gwv1.PolicyStatus{
+				// 	Ancestors: []gwv1.PolicyAncestorStatus{
+				// 		{
+				// 			AncestorRef:    parentRef,
+				// 			ControllerName: v1alpha2.GatewayController(controllerName),
+				// 			Conditions:     conds,
+				// 		},
+				// 	},
+				// }
+				// return &status, nil
+				if controllerName != "" && string(parentRef.Name) != "" {
+					ancestors = append(ancestors, gwv1.PolicyAncestorStatus{
+						AncestorRef:    parentRef,
+						ControllerName: v1alpha2.GatewayController(controllerName),
+						Conditions:     conds,
+					})
+				}
 				continue
 			}
 			spec := (*backend).Spec
@@ -67,13 +152,13 @@ func translatePoliciesForBackendConfig(
 				// Single provider backend
 				case spec.AI.LLM != nil:
 					if target.SectionName != nil {
-						logger.Error("sectionName must be omitted when targeting AI backend with single provider; skipping policy", "backend", backendRef, "policy", kubeutils.NamespacedNameFrom(bcfg))
+						logger.Error("sectionName must be omitted when targeting AI backend with single provider; skipping policy", "backend", backendKey, "policy", kubeutils.NamespacedNameFrom(bcfg))
 						continue
 					}
 					// Single provider backends also use api.ProviderGroups(ref: buildAIIr), so policies must be applied per-provider using PolicyTarget_SubBackend
 					policyTarget = &api.PolicyTarget{
 						Kind: &api.PolicyTarget_SubBackend{
-							SubBackend: utils.InternalBackendName(backendRef.Namespace, string(backendRef.Name), utils.SingularLLMProviderSubBackendName),
+							SubBackend: utils.InternalBackendName(bcfg.Namespace, string(target.Name), utils.SingularLLMProviderSubBackendName),
 						},
 					}
 				// Multi-provider backend
@@ -82,7 +167,7 @@ func translatePoliciesForBackendConfig(
 						// target SubBackend
 						policyTarget = &api.PolicyTarget{
 							Kind: &api.PolicyTarget_SubBackend{
-								SubBackend: utils.InternalBackendName(backendRef.Namespace, string(backendRef.Name), string(*target.SectionName)),
+								SubBackend: utils.InternalBackendName(bcfg.Namespace, string(target.Name), string(*target.SectionName)),
 							},
 						}
 					} else {
@@ -94,7 +179,7 @@ func translatePoliciesForBackendConfig(
 						}
 					}
 				default:
-					logger.Warn("unknown backend type", "backend", backendRef, "policy", kubeutils.NamespacedNameFrom(bcfg))
+					logger.Warn("unknown backend type", "backend", backendKey, "policy", kubeutils.NamespacedNameFrom(bcfg))
 					continue
 				}
 			} else {
@@ -125,23 +210,116 @@ func translatePoliciesForBackendConfig(
 			continue
 		}
 
-		tls, err := getConfigPolicyTLS(krtctx, secrets, bcfg)
-		if err != nil {
-			logger.Error("error getting config policy TLS", "policy", kubeutils.NamespacedNameFrom(bcfg), "error", err)
-			continue
-		}
+		if policyTarget != nil {
+			policy, err := translateBackendConfigPolicyToAgw(krtctx, secrets, bcfg, policyTarget)
+			if policy != nil {
+				policies = append(policies, *policy)
+			}
 
-		policy := &api.Policy{
-			Name:   bcfg.Namespace + "/" + bcfg.Name + ":backendconfig" + attachmentName(policyTarget),
-			Target: policyTarget,
-			Spec: &api.PolicySpec{Kind: &api.PolicySpec_BackendTls{
-				BackendTls: tls,
-			}},
+			var conds []metav1.Condition
+			if err != nil {
+				meta.SetStatusCondition(&conds, metav1.Condition{
+					Type:    string(v1alpha1.PolicyConditionAccepted),
+					Status:  metav1.ConditionFalse,
+					Reason:  string(v1alpha1.PolicyReasonInvalid),
+					Message: err.Error(),
+				})
+			} else {
+				meta.SetStatusCondition(&conds, metav1.Condition{
+					Type:    string(v1alpha1.PolicyConditionAccepted),
+					Status:  metav1.ConditionTrue,
+					Reason:  string(v1alpha1.PolicyReasonValid),
+					Message: reporter.PolicyAcceptedMsg,
+				})
+			}
+			meta.SetStatusCondition(&conds, metav1.Condition{
+				Type:    string(v1alpha1.PolicyConditionAttached),
+				Status:  metav1.ConditionTrue,
+				Reason:  string(v1alpha1.PolicyReasonAttached),
+				Message: reporter.PolicyAttachedMsg,
+			})
+			// Set LastTransitionTime for all conditions
+			for i := range conds {
+				if conds[i].LastTransitionTime.IsZero() {
+					conds[i].LastTransitionTime = metav1.Now()
+				}
+			}
+			// Only append valid ancestors: require non-empty controllerName and parentRef name
+			if controllerName != "" && string(parentRef.Name) != "" {
+				ancestors = append(ancestors, gwv1.PolicyAncestorStatus{
+					AncestorRef:    parentRef,
+					ControllerName: v1alpha2.GatewayController(controllerName),
+					Conditions:     conds,
+				})
+			}
 		}
-		policies = append(policies, AgwPolicy{policy})
 	}
 
-	return policies
+	status := gwv1.PolicyStatus{Ancestors: ancestors}
+
+	if len(status.Ancestors) > 15 {
+		ignored := status.Ancestors[15:]
+		status.Ancestors = status.Ancestors[:15]
+		status.Ancestors = append(status.Ancestors, gwv1.PolicyAncestorStatus{
+			AncestorRef: gwv1.ParentReference{
+				Group: k8sptr.To(gwv1.Group("gateway.kgateway.dev")),
+				Name:  "StatusSummary",
+			},
+			ControllerName: gwv1.GatewayController(controllerName),
+			Conditions: []metav1.Condition{
+				{
+					Type:    "StatusSummarized",
+					Status:  metav1.ConditionTrue,
+					Reason:  "StatusSummary",
+					Message: fmt.Sprintf("%d AncestorRefs ignored due to max status size", len(ignored)),
+				},
+			},
+		})
+	}
+
+	slices.SortStableFunc(status.Ancestors, func(a, b gwv1.PolicyAncestorStatus) int {
+		return strings.Compare(reports.ParentString(a.AncestorRef), reports.ParentString(b.AncestorRef))
+	})
+
+	return &status, policies
+}
+
+func translateBackendConfigPolicyToAgw(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy, policyTarget *api.PolicyTarget) (*AgwPolicy, error) {
+	policy := &api.Policy{
+		Name:   bcfg.Namespace + "/" + bcfg.Name + ":backendconfig" + attachmentName(policyTarget),
+		Target: policyTarget,
+		Spec: &api.PolicySpec{
+			Kind: &api.PolicySpec_BackendTls{},
+		},
+	}
+
+	tls, err := getConfigPolicyTLS(krtctx, secrets, bcfg)
+	if err != nil {
+		return nil, err
+	}
+	policy.Spec.Kind.(*api.PolicySpec_BackendTls).BackendTls = tls
+
+	// report a status for unsupported field usage with the partially translated policy
+	if unsupportedFields := checkUnsupportedBackendConfigPolicyFields(bcfg); len(unsupportedFields) > 0 {
+		err = fmt.Errorf("unsupported fields: %s", strings.Join(unsupportedFields, ", "))
+		return &AgwPolicy{policy}, err
+	}
+
+	return &AgwPolicy{policy}, nil
+}
+
+func checkUnsupportedBackendConfigPolicyFields(bcfg *v1alpha1.BackendConfigPolicy) []string {
+	var unsupportedFields []string
+	for fieldName, checkFunc := range unsupportedBackendConfigPolicyFields {
+		if checkFunc(bcfg) {
+			unsupportedFields = append(unsupportedFields, fieldName)
+		}
+	}
+
+	// sort for consistent reporting
+	slices.Sort(unsupportedFields)
+
+	return unsupportedFields
 }
 
 func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy) (*api.PolicySpec_BackendTLS, error) {

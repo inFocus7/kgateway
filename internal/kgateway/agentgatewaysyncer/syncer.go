@@ -657,6 +657,11 @@ func registerPolicyStatus(s *status.StatusCollections, statusCols map[schema.Gro
 						logger.Error("failed to cast to TrafficPolicy", "resource", l.ResourceName(), "kind", currentGVK.Kind)
 						return
 					}
+				case "BackendConfigPolicy":
+					if _, ok := l.Obj.(*v1alpha1.BackendConfigPolicy); !ok {
+						logger.Error("failed to cast to BackendConfigPolicy", "resource", l.ResourceName(), "kind", currentGVK.Kind)
+						return
+					}
 				default:
 					// For other policy types that might be added in the future
 					logger.Debug("handling policy type", "kind", currentGVK.Kind, "resource", l.ResourceName())

@@ -117,7 +117,7 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 				require.Len(t, policies, 1)
 
 				policy := policies[0].Policy
-				assert.Equal(t, "default/config-policy:backendconfig:default/test-backend", policy.Name)
+				assert.Equal(t, "default/config-policy:backendtls:default/test-backend", policy.Name)
 				assert.NotNil(t, policy.Target)
 
 				backendTarget := policy.Target.GetBackend()
@@ -236,8 +236,8 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 				for _, policy := range policies {
 					policyNames[policy.Policy.Name] = true
 				}
-				assert.True(t, policyNames["default/multiple-target-refs-policy:backendconfig:default/test-backend"])
-				assert.True(t, policyNames["default/multiple-target-refs-policy:backendconfig:default/test-backend2"])
+				assert.True(t, policyNames["default/multiple-target-refs-policy:backendtls:default/test-backend"])
+				assert.True(t, policyNames["default/multiple-target-refs-policy:backendtls:default/test-backend2"])
 
 				// Check status has two ancestors (one per target ref)
 				require.NotNil(t, status)
@@ -296,7 +296,7 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 				require.Len(t, policies, 1)
 
 				// Check that only the existing target ref is translated
-				assert.Equal(t, "default/multiple-target-refs-policy:backendconfig:default/test-backend", policies[0].Policy.Name)
+				assert.Equal(t, "default/multiple-target-refs-policy:backendtls:default/test-backend", policies[0].Policy.Name)
 
 				// Check status has two ancestors (one per target ref)
 				require.NotNil(t, status)
@@ -354,7 +354,7 @@ H4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4HH4H
 				require.Len(t, policies, 1)
 
 				policy := policies[0].Policy
-				assert.Equal(t, "default/unsupported-fields-policy:backendconfig:default/test-backend", policy.Name)
+				assert.Equal(t, "default/unsupported-fields-policy:backendtls:default/test-backend", policy.Name)
 				assert.NotNil(t, policy.Target)
 
 				backendTarget := policy.Target.GetBackend()

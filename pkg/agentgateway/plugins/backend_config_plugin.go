@@ -127,16 +127,6 @@ func translatePoliciesForBackendConfig(
 					Reason:  string(v1alpha1.PolicyReasonInvalid),
 					Message: fmt.Sprintf("Backend %s not found", target.Name),
 				})
-				// status := gwv1.PolicyStatus{
-				// 	Ancestors: []gwv1.PolicyAncestorStatus{
-				// 		{
-				// 			AncestorRef:    parentRef,
-				// 			ControllerName: v1alpha2.GatewayController(controllerName),
-				// 			Conditions:     conds,
-				// 		},
-				// 	},
-				// }
-				// return &status, nil
 				if controllerName != "" && string(parentRef.Name) != "" {
 					ancestors = append(ancestors, gwv1.PolicyAncestorStatus{
 						AncestorRef:    parentRef,
@@ -211,10 +201,8 @@ func translatePoliciesForBackendConfig(
 		}
 
 		if policyTarget != nil {
-			policy, err := translateBackendConfigPolicyToAgw(krtctx, secrets, bcfg, policyTarget)
-			if policy != nil {
-				policies = append(policies, *policy)
-			}
+			translatedPolicies, err := translateBackendConfigPolicyToAgw(krtctx, secrets, bcfg, policyTarget)
+			policies = append(policies, translatedPolicies...)
 
 			var conds []metav1.Condition
 			if err != nil {
@@ -284,45 +272,25 @@ func translatePoliciesForBackendConfig(
 	return &status, policies
 }
 
-func translateBackendConfigPolicyToAgw(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy, policyTarget *api.PolicyTarget) (*AgwPolicy, error) {
-	policy := &api.Policy{
-		Name:   bcfg.Namespace + "/" + bcfg.Name + ":backendconfig" + attachmentName(policyTarget),
-		Target: policyTarget,
-		Spec: &api.PolicySpec{
-			Kind: &api.PolicySpec_BackendTls{},
-		},
-	}
+func translateBackendConfigPolicyToAgw(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy, policyTarget *api.PolicyTarget) ([]AgwPolicy, error) {
+	agwPolicies := make([]AgwPolicy, 0)
 
-	tls, err := getConfigPolicyTLS(krtctx, secrets, bcfg)
+	// translate the TLS policy
+	tlsPolicy, err := translateBackendTlsPolicy(krtctx, secrets, bcfg, policyTarget)
 	if err != nil {
-		return nil, err
+		return agwPolicies, err
 	}
-	policy.Spec.Kind.(*api.PolicySpec_BackendTls).BackendTls = tls
+	agwPolicies = append(agwPolicies, *tlsPolicy)
 
-	// report a status for unsupported field usage with the partially translated policy
+	// report a status for unsupported field usage
 	if unsupportedFields := checkUnsupportedBackendConfigPolicyFields(bcfg); len(unsupportedFields) > 0 {
-		err = fmt.Errorf("unsupported fields: %s", strings.Join(unsupportedFields, ", "))
-		return &AgwPolicy{policy}, err
+		return agwPolicies, fmt.Errorf("unsupported fields: %s", strings.Join(unsupportedFields, ", "))
 	}
 
-	return &AgwPolicy{policy}, nil
+	return agwPolicies, nil
 }
 
-func checkUnsupportedBackendConfigPolicyFields(bcfg *v1alpha1.BackendConfigPolicy) []string {
-	var unsupportedFields []string
-	for fieldName, checkFunc := range unsupportedBackendConfigPolicyFields {
-		if checkFunc(bcfg) {
-			unsupportedFields = append(unsupportedFields, fieldName)
-		}
-	}
-
-	// sort for consistent reporting
-	slices.Sort(unsupportedFields)
-
-	return unsupportedFields
-}
-
-func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy) (*api.PolicySpec_BackendTLS, error) {
+func translateBackendTlsPolicy(krtctx krt.HandlerContext, secrets krt.Collection[*corev1.Secret], bcfg *v1alpha1.BackendConfigPolicy, policyTarget *api.PolicyTarget) (*AgwPolicy, error) {
 	var cert, key *wrapperspb.BytesValue
 
 	var hostname *wrapperspb.StringValue = nil
@@ -369,11 +337,35 @@ func getConfigPolicyTLS(krtctx krt.HandlerContext, secrets krt.Collection[*corev
 		}
 	}
 
-	return &api.PolicySpec_BackendTLS{
-		Cert:     cert,
-		Key:      key,
-		Hostname: hostname,
-		// No mTLS support yet
-		Insecure: wrapperspb.Bool(true),
-	}, nil
+	policy := &api.Policy{
+		Name:   bcfg.Namespace + "/" + bcfg.Name + ":backendtls" + attachmentName(policyTarget),
+		Target: policyTarget,
+		Spec: &api.PolicySpec{
+			Kind: &api.PolicySpec_BackendTls{
+				BackendTls: &api.PolicySpec_BackendTLS{
+					Cert:     cert,
+					Key:      key,
+					Hostname: hostname,
+					// No mTLS support yet
+					Insecure: wrapperspb.Bool(true),
+				},
+			},
+		},
+	}
+
+	return &AgwPolicy{policy}, nil
+}
+
+func checkUnsupportedBackendConfigPolicyFields(bcfg *v1alpha1.BackendConfigPolicy) []string {
+	var unsupportedFields []string
+	for fieldName, checkFunc := range unsupportedBackendConfigPolicyFields {
+		if checkFunc(bcfg) {
+			unsupportedFields = append(unsupportedFields, fieldName)
+		}
+	}
+
+	// sort for consistent reporting
+	slices.Sort(unsupportedFields)
+
+	return unsupportedFields
 }

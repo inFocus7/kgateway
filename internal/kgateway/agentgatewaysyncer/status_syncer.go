@@ -39,7 +39,8 @@ const (
 type AgentGwStatusSyncer struct {
 	client kube.Client
 
-	trafficPolicies StatusSyncer[*v1alpha1.TrafficPolicy, *gwv1.PolicyStatus]
+	trafficPolicies       StatusSyncer[*v1alpha1.TrafficPolicy, *gwv1.PolicyStatus]
+	backendConfigPolicies StatusSyncer[*v1alpha1.BackendConfigPolicy, *gwv1.PolicyStatus]
 
 	// Configuration
 	controllerName string
@@ -144,6 +145,16 @@ func NewAgwStatusSyncer(
 				}
 			},
 		},
+		backendConfigPolicies: StatusSyncer[*v1alpha1.BackendConfigPolicy, *gwv1.PolicyStatus]{
+			name:   "backendConfigPolicy",
+			client: kclient.NewFilteredDelayed[*v1alpha1.BackendConfigPolicy](client, wellknown.BackendConfigPolicyGVR, f),
+			build: func(om metav1.ObjectMeta, s *gwv1.PolicyStatus) *v1alpha1.BackendConfigPolicy {
+				return &v1alpha1.BackendConfigPolicy{
+					ObjectMeta: om,
+					Status:     *s,
+				}
+			},
+		},
 	}
 
 	return syncer
@@ -198,6 +209,8 @@ func (s *AgentGwStatusSyncer) SyncStatus(ctx context.Context, resource status.Re
 		s.httpRoutes.ApplyStatus(ctx, resource, statusObj)
 	case wellknown.TrafficPolicyGVK:
 		s.trafficPolicies.ApplyStatus(ctx, resource, statusObj)
+	case wellknown.BackendConfigPolicyGVK:
+		s.backendConfigPolicies.ApplyStatus(ctx, resource, statusObj)
 	default:
 		log.Fatalf("SyncStatus: unknown resource type: %v", resource.GroupVersionKind)
 	}

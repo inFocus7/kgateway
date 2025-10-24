@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 
+	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1"
 	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/krt"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -50,12 +51,11 @@ func InternalBackendName(backendNamespace, backendName, targetName string) strin
 	return name
 }
 
-// ConvertStatusCollection converts the specific status collection
-// to the generic controllers.Object status collection expected by the KRT interface.
-func ConvertStatusCollection[T controllers.Object](col krt.Collection[krt.ObjectWithStatus[T, gwv1.PolicyStatus]]) krt.StatusCollection[controllers.Object, gwv1.PolicyStatus] {
-	// Use krt.NewCollection to transform the collection
-	return krt.NewCollection(col, func(ctx krt.HandlerContext, item krt.ObjectWithStatus[T, gwv1.PolicyStatus]) *krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus] {
-		return &krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus]{
+// convertStatusCollection converts the specific TrafficPolicy status collection
+// to the generic controllers.Object status collection expected by the interface
+func convertStatusCollection(col krt.Collection[krt.ObjectWithStatus[*v1alpha1.TrafficPolicy, gwv1.PolicyStatus]]) krt.StatusCollection[controllers.Object, gwv1.PolicyStatus] {
+	return krt.MapCollection(col, func(item krt.ObjectWithStatus[*v1alpha1.TrafficPolicy, gwv1.PolicyStatus]) krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus] {
+		return krt.ObjectWithStatus[controllers.Object, gwv1.PolicyStatus]{
 			Obj:    controllers.Object(item.Obj),
 			Status: item.Status,
 		}

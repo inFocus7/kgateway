@@ -1258,6 +1258,7 @@ func isCEL(expr v1alpha1.Template) bool {
 	_, iss := celEnv.Parse(string(expr))
 	return iss.Err() == nil
 }
+
 func attachmentName(target *api.PolicyTarget) string {
 	if target == nil {
 		return ""

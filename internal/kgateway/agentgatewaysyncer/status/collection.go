@@ -115,6 +115,8 @@ func enqueueStatus[T any](sw WorkerQueue, obj controllers.Object, ws T) {
 		res.GroupVersionKind = wellknown.TrafficPolicyGVK
 	case *gwxv1a1.XListenerSet:
 		res.GroupVersionKind = wellknown.XListenerSetGVK
+	case *v1alpha1.BackendConfigPolicy:
+		res.GroupVersionKind = wellknown.BackendConfigPolicyGVK
 	default:
 		log.Fatalf("enqueueStatus unknown type %T", t)
 	}

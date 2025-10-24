@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentgateway/agentgateway/go/api"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+	"istio.io/istio/pkg/kube/kclient"
 	"istio.io/istio/pkg/kube/krt"
 	"istio.io/istio/pkg/ptr"
 	corev1 "k8s.io/api/core/v1"
@@ -63,12 +64,18 @@ var unsupportedBackendConfigPolicyFields = map[string]func(*v1alpha1.BackendConf
 // NewBackendConfigPlugin creates a new BackendConfigPolicy plugin
 func NewBackendConfigPlugin(agw *AgwCollections) AgwPlugin {
 	clusterDomain := kubeutils.GetClusterDomainName()
-	policyStatusCol, policyCol := krt.NewStatusManyCollection(agw.BackendConfigPolicies, func(krtctx krt.HandlerContext, bcfg *v1alpha1.BackendConfigPolicy) (
+
+	col := krt.WrapClient(kclient.NewFiltered[*v1alpha1.BackendConfigPolicy](
+		agw.Client,
+		kclient.Filter{ObjectFilter: agw.Client.ObjectFilter()},
+	), agw.KrtOpts.ToOptions("BackendConfigPolicy")...)
+	policyStatusCol, policyCol := krt.NewStatusManyCollection(col, func(krtctx krt.HandlerContext, bcfg *v1alpha1.BackendConfigPolicy) (
 		*gwv1.PolicyStatus,
 		[]AgwPolicy,
 	) {
 		return translatePoliciesForBackendConfig(krtctx, agw.Backends, agw.Secrets, bcfg, clusterDomain, agw.ControllerName)
 	})
+
 	return AgwPlugin{
 		ContributesPolicies: map[schema.GroupKind]PolicyPlugin{
 			wellknown.BackendConfigPolicyGVK.GroupKind(): {
@@ -77,7 +84,7 @@ func NewBackendConfigPlugin(agw *AgwCollections) AgwPlugin {
 			},
 		},
 		ExtraHasSynced: func() bool {
-			return policyCol.HasSynced()
+			return policyCol.HasSynced() && policyStatusCol.HasSynced()
 		},
 	}
 }

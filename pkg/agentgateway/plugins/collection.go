@@ -127,6 +127,9 @@ func registerKgwResources(kgwClient kgwversioned.Interface) {
 		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
 			return kgwClient.GatewayV1alpha1().BackendConfigPolicies(namespace).Watch(context.Background(), o)
 		},
+		func(c kubeclient.ClientGetter, namespace string) kubetypes.WriteAPI[*v1alpha1.BackendConfigPolicy] {
+			return kgwClient.GatewayV1alpha1().BackendConfigPolicies(namespace)
+		},
 	)
 }
 
@@ -205,6 +208,9 @@ func registerGatewayAPITypes() {
 		},
 		func(c kubeclient.ClientGetter, namespace string, o metav1.ListOptions) (watch.Interface, error) {
 			return c.GatewayAPI().GatewayV1().BackendTLSPolicies(namespace).Watch(context.Background(), o)
+		},
+		func(c kubeclient.ClientGetter, namespace string) kubetypes.WriteAPI[*gwv1.BackendTLSPolicy] {
+			return c.GatewayAPI().GatewayV1().BackendTLSPolicies(namespace)
 		},
 	)
 	kubeclient.Register[*gwv1alpha2.TCPRoute](
